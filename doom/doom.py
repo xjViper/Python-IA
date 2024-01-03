@@ -6,10 +6,13 @@ import cv2
 
 
 class VizDoomGymnasium(Env):
-    def __init__(self, render=False):
+    def __init__(self, render=False, config="./scenarios/deadly_corridor_s1.cfg"):
         super().__init__()
         self.game = doom.DoomGame()
-        self.game.load_config("./scenarios/basic.cfg")
+        # Change the Load Config to use the AI in others Levels
+        # Search in this repository the avaliable Levels
+        # https://github.com/Farama-Foundation/ViZDoom/tree/master/scenarios
+        self.game.load_config(config)
 
         if render == False:
             self.game.set_window_visible(False)
@@ -21,29 +24,49 @@ class VizDoomGymnasium(Env):
         self.observation_space = Box(
             low=0,
             high=255,
-            # shape=(self.game.get_screen_height(), self.game.get_screen_width(), 3),
             shape=(3, 240, 320),
             dtype=np.uint8,
         )
-        self.action_space = Discrete(3)
+
+        # Number of Available buttons in Config file
+        self.action_space = Discrete(7)
+
+        # Game Variables: HEALTH DAMAGE_TAKEN HITCOUNT SELECTED_WEAPON_AMMO
+        self.damage_taken = 0
+        self.hitcount = 0
+        self.selected_weapon_ammo = 52
 
     def step(self, action):
-        actions = np.identity(3, dtype=np.uint8)
-        reward = self.game.make_action(actions[action], 4)
+        # Number of Available buttons in Config file
+        actions = np.identity(7, dtype=np.uint8)
+        movement_reward = self.game.make_action(actions[action], 4)
+
+        reward = 0
 
         if self.game.get_state() is not None:
             state = self.game.get_state()
             observation = self.grayscale(state)
-            # observation = state.screen_buffer.transpose(
-            #     1, 2, 0
-            # )  # Transpose para (H, W, C)
-            # observation = cv2.resize(
-            #     observation, (320, 240), interpolation=cv2.INTER_CUBIC
-            # )
-            # observation = observation.transpose(2, 0, 1)
+
+            # Reward Shaping
+            game_variables = state.game_variables
+            health, damage_taken, hitcount, ammo = game_variables
+
+            # Calculate reward deltas
+            damage_taken_delta = -damage_taken + self.damage_taken
+            self.damage_taken = damage_taken
+            hitcount_delta = hitcount - self.hitcount
+            self.hitcount = hitcount
+            ammo_delta = ammo - self.selected_weapon_ammo
+            self.selected_weapon_ammo = ammo
+
+            reward = (
+                movement_reward
+                + damage_taken_delta * 10
+                + hitcount_delta * 200
+                + ammo_delta * 5
+            )
 
         else:
-            # state = np.zeros(self.observation_space.shape)
             observation = np.zeros(self.observation_space.shape)
 
         terminated = self.game.is_episode_finished()
@@ -63,13 +86,10 @@ class VizDoomGymnasium(Env):
         if state is not None and state.screen_buffer is not None:
             return state.screen_buffer, {}
         else:
-            # Return a valid state if screen_buffer is None
             return np.zeros(self.observation_space.shape), {}
 
     def grayscale(self, observation):
-        transpose = observation.screen_buffer.transpose(
-            1, 2, 0
-        )  # Transpose para (H, W, C)
+        transpose = observation.screen_buffer.transpose(1, 2, 0)
         resize = cv2.resize(transpose, (320, 240), interpolation=cv2.INTER_CUBIC)
         state = resize.transpose(2, 0, 1)
         return state
@@ -103,12 +123,14 @@ class TrainAndLoggingCallback(BaseCallback):
         return True
 
 
+# Change the diretory to each Config File
 CHECKPOINT_DIR = "./train/"
 LOG_DIR = "./logs/"
 
 
 callback = TrainAndLoggingCallback(check_freq=10000, save_path=CHECKPOINT_DIR)
 
+# Add here the render and config variables
 env = VizDoomGymnasium(render=True)
 
 model = PPO(
@@ -117,6 +139,6 @@ model = PPO(
     verbose=1,
     tensorboard_log=LOG_DIR,
     learning_rate=0.0001,
-    n_steps=256,
+    n_steps=4096,
 )
-model.learn(total_timesteps=10000, callback=callback)
+model.learn(total_timesteps=20000, callback=callback)
