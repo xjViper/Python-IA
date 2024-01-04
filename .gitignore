@@ -1,3 +1,5 @@
-atari video cube/train/
-atari video cube/train/best_model_10000.zip
+atari-video-cube/logs/
+atari-video-cube/train/
+
 doom/train/
+doom/logs/
