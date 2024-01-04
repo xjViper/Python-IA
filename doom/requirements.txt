@@ -1,0 +1,5 @@
+gymnasium==0.29.1
+numpy==1.26.3
+opencv_python==4.8.1.78
+stable_baselines3==2.2.1
+vizdoom==1.2.2
